@@ -1,14 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import Lenis from '@studio-freight/lenis';
 import './App.css';
 
 function App() {
   const canvasRef = useRef(null);
-  const [scrollY, setScrollY] = useState(0);
+  const lenisRef = useRef(null);
 
   useEffect(() => {
-    // Three.js Scene Setup
-    const container = canvasRef.current;
+    // ===== 1. Lenis Smooth Scroll 설정 =====
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smooth: true,
+    });
+
+    lenisRef.current = lenis;
+
+    let lastThreeApp = null;
+
+    // Lenis 스크롤 이벤트
+    lenis.on('scroll', (e) => {
+      if (lastThreeApp && lastThreeApp.group) {
+        // 패럴랙스 효과는 선택사항 (현재 비활성화)
+      }
+    });
+
+    // ===== 2. Three.js 3D 배경 설정 =====
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
       75,
@@ -16,229 +37,292 @@ function App() {
       0.1,
       1000
     );
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    camera.position.z = 5;
 
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      alpha: true,
+      antialias: true,
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    container.appendChild(renderer.domElement);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    // Create particles
-    const particlesGeometry = new THREE.BufferGeometry();
-    const particlesCount = 5000;
-    const posArray = new Float32Array(particlesCount * 3);
+    // 3D 객체 그룹
+    const group = new THREE.Group();
+    scene.add(group);
 
-    for (let i = 0; i < particlesCount * 3; i++) {
-      posArray[i] = (Math.random() - 0.5) * 5;
-    }
-
-    particlesGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(posArray, 3)
-    );
-
-    const particlesMaterial = new THREE.PointsMaterial({
-      size: 0.005,
-      color: 0xff0080,
+    // Icosahedron 메시 (반투명)
+    const geometry = new THREE.IcosahedronGeometry(2, 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.1,
+      roughness: 0.3,
+      metalness: 0.5,
     });
+    const mesh = new THREE.Mesh(geometry, material);
+    group.add(mesh);
 
-    const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
-    scene.add(particlesMesh);
-
-    // Create torus
-    const torusGeometry = new THREE.TorusGeometry(0.7, 0.2, 16, 100);
-    const torusMaterial = new THREE.MeshBasicMaterial({
-      color: 0x7928ca,
-      wireframe: true,
+    // Wireframe (악센트 컬러)
+    const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+    const wireframeMaterial = new THREE.LineBasicMaterial({
+      color: 0xd946ef,
+      transparent: true,
+      opacity: 0.3,
     });
-    const torus = new THREE.Mesh(torusGeometry, torusMaterial);
-    scene.add(torus);
+    const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+    group.add(wireframe);
 
-    camera.position.z = 2;
+    // 조명
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
 
-    // Mouse move effect
-    let mouseX = 0;
-    let mouseY = 0;
+    const pointLight = new THREE.PointLight(0xd946ef, 1.5, 100);
+    pointLight.position.set(5, 5, 5);
+    scene.add(pointLight);
 
-    const handleMouseMove = (event) => {
-      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+    const pointLight2 = new THREE.PointLight(0x4a90e2, 1.0, 100);
+    pointLight2.position.set(-5, -5, 5);
+    scene.add(pointLight2);
+
+    // 마우스 이동
+    let mouse = new THREE.Vector2();
+    const onMouseMove = (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     };
+    window.addEventListener('mousemove', onMouseMove);
 
-    document.addEventListener('mousemove', handleMouseMove);
-
-    // Animation loop
-    const animate = () => {
-      requestAnimationFrame(animate);
-
-      torus.rotation.x += 0.01;
-      torus.rotation.y += 0.005;
-      torus.rotation.z += 0.01;
-
-      particlesMesh.rotation.y += 0.001;
-
-      camera.position.x = mouseX * 0.1;
-      camera.position.y = mouseY * 0.1;
-
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
-    // Handle window resize
-    const handleResize = () => {
+    // 윈도우 리사이즈
+    const onWindowResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    };
+    window.addEventListener('resize', onWindowResize);
+
+    lastThreeApp = { scene, camera, renderer, group, mouse, mesh, wireframe };
+
+    // ===== 3. 통합 애니메이션 루프 =====
+    const clock = new THREE.Clock();
+
+    const animate = (time) => {
+      lenis.raf(time);
+
+      const elapsedTime = clock.getElapsedTime();
+
+      mesh.rotation.x = elapsedTime * 0.1;
+      mesh.rotation.y = elapsedTime * 0.15;
+      wireframe.rotation.x = elapsedTime * 0.1;
+      wireframe.rotation.y = elapsedTime * 0.15;
+
+      group.rotation.y += (mouse.x * 0.3 - group.rotation.y) * 0.02;
+      group.rotation.x += (-mouse.y * 0.3 - group.rotation.x) * 0.02;
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
     };
 
-    window.addEventListener('resize', handleResize);
-
-    // Scroll handler
-    const handleScroll = () => {
-      setScrollY(window.pageYOffset);
-    };
-
-    window.addEventListener('scroll', handleScroll);
+    requestAnimationFrame(animate);
 
     // Cleanup
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleScroll);
-      container.removeChild(renderer.domElement);
-      particlesGeometry.dispose();
-      particlesMaterial.dispose();
-      torusGeometry.dispose();
-      torusMaterial.dispose();
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('resize', onWindowResize);
+      lenis.destroy();
+      geometry.dispose();
+      material.dispose();
+      wireframeGeometry.dispose();
+      wireframeMaterial.dispose();
+      renderer.dispose();
     };
   }, []);
 
-  const scrollToSection = (id) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    alert("Message sent! We'll get back to you soon.");
-    e.target.reset();
-  };
-
   return (
-    <div className="App">
-      {/* Navigation */}
-      <nav>
-        <div className="logo">AIVILLAIN</div>
-        <ul className="nav-links">
-          <li><a onClick={() => scrollToSection('home')}>Home</a></li>
-          <li><a onClick={() => scrollToSection('about')}>About</a></li>
-          <li><a onClick={() => scrollToSection('services')}>Services</a></li>
-          <li><a onClick={() => scrollToSection('portfolio')}>Portfolio</a></li>
-          <li><a onClick={() => scrollToSection('contact')}>Contact</a></li>
-        </ul>
-      </nav>
+    <div className="App bg-brand-dark text-white">
+      {/* 3D 배경 캔버스 */}
+      <canvas id="bg-canvas" ref={canvasRef}></canvas>
 
-      {/* Hero Section */}
-      <section id="home" className="hero">
-        <div ref={canvasRef} id="canvas-container"></div>
-        <div className="floating-shape shape-1" style={{ transform: `translateY(${scrollY * 0.5}px)` }}></div>
-        <div className="floating-shape shape-2" style={{ transform: `translateY(${scrollY * 1}px)` }}></div>
-        <div className="floating-shape shape-3" style={{ transform: `translateY(${scrollY * 1.5}px)` }}></div>
-        <div className="hero-content">
-          <h1>AIVILLAIN</h1>
-          <p>CREATIVE AI STUDIO</p>
-          <button className="cta-button" onClick={() => scrollToSection('portfolio')}>
-            Explore My Work
-          </button>
-        </div>
-      </section>
-
-      {/* About Section */}
-      <section id="about" className="section about-section">
-        <div className="about-image"></div>
-        <div className="about-content">
-          <h2>About AIVillain</h2>
-          <p>
-            We are a cutting-edge creative AI studio pushing the boundaries of
-            digital artistry and innovation.
-          </p>
-          <p>
-            Specializing in AI-generated content, 3D visualizations, and
-            immersive digital experiences, we transform ideas into stunning
-            realities.
-          </p>
-          <p>
-            Our mission is to redefine creativity through the power of
-            artificial intelligence.
-          </p>
-        </div>
-      </section>
-
-      {/* Services Section */}
-      <section id="services" className="section services">
-        <h2 className="section-title">Services</h2>
-        <div className="services-grid">
-          {[
-            { icon: '🎨', title: 'AI Art Generation', desc: 'Creating breathtaking visual content using state-of-the-art AI models and creative direction.' },
-            { icon: '🎬', title: '3D Animation', desc: 'Stunning 3D animations and motion graphics that bring your vision to life.' },
-            { icon: '💻', title: 'Web Experiences', desc: 'Interactive web experiences with cutting-edge technologies and smooth animations.' },
-            { icon: '🎭', title: 'Brand Identity', desc: 'Complete brand identity solutions powered by AI creativity and human expertise.' },
-            { icon: '🚀', title: 'Digital Strategy', desc: 'Strategic consulting to help your brand thrive in the digital landscape.' },
-            { icon: '⚡', title: 'Innovation Labs', desc: 'Experimental projects exploring the future of AI and creative technology.' }
-          ].map((service, index) => (
-            <div key={index} className="service-card">
-              <div className="service-icon">{service.icon}</div>
-              <h3>{service.title}</h3>
-              <p>{service.desc}</p>
+      {/* 스크롤 콘텐츠 */}
+      <div className="scroll-content">
+        {/* 네비게이션 */}
+        <nav className="fixed top-0 left-0 right-0 z-50">
+          <div className="container mx-auto max-w-6xl px-6 py-4 flex justify-between items-center">
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="text-2xl font-bold tracking-tighter hover:opacity-80 transition-opacity"
+            >
+              aivil<span className="accent-color">lain</span>
+            </button>
+            <div className="hidden md:flex space-x-8">
+              <a href="#about" className="text-gray-700 hover:text-white transition-colors">
+                About
+              </a>
+              <a href="#projects" className="text-gray-700 hover:text-white transition-colors">
+                Creations
+              </a>
+              <a href="#contact" className="text-gray-700 hover:text-white transition-colors">
+                Contact
+              </a>
             </div>
-          ))}
-        </div>
-      </section>
+            <button className="md:hidden text-white">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+                stroke="currentColor"
+                className="w-6 h-6"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
+          </div>
+        </nav>
 
-      {/* Portfolio Section */}
-      <section id="portfolio" className="section">
-        <h2 className="section-title">Portfolio</h2>
-        <div className="portfolio-grid">
-          {[
-            { title: 'Neural Dreams', subtitle: 'AI Art Collection' },
-            { title: 'Cyber Visions', subtitle: '3D Animation Series' },
-            { title: 'Digital Odyssey', subtitle: 'Interactive Experience' },
-            { title: 'Future Brands', subtitle: 'Brand Identity Suite' }
-          ].map((item, index) => (
-            <div key={index} className="portfolio-item">
-              <div className="portfolio-content">
-                <h3>{item.title}</h3>
-                <p>{item.subtitle}</p>
+        {/* 히어로 섹션 */}
+        <header className="h-screen w-full flex items-center justify-center relative text-center px-6">
+          <div>
+            <h1 className="text-6xl md:text-8xl lg:text-9xl font-extrabold tracking-tighter mb-4">
+              CODE. <span className="accent-color">CREATE.</span>
+            </h1>
+            <h1 className="text-6xl md:text-8xl lg:text-9xl font-extrabold tracking-tighter">
+              CONQUER.
+            </h1>
+            <p className="text-xl md:text-2xl text-gray-400 max-w-2xl mx-auto mt-6">
+              Welcome to the nexus of artificial intelligence and digital art.
+              I am <span className="text-white font-bold">aivillain</span>, and I build worlds.
+            </p>
+          </div>
+          {/* 스크롤 다운 인디케이터 */}
+          <div className="scroll-down absolute bottom-20 left-1/2 -translate-x-1/2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.5"
+              stroke="currentColor"
+              className="w-8 h-8 text-gray-400"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+          </div>
+        </header>
+
+        {/* 메인 콘텐츠 */}
+        <main className="bg-brand-light-dark py-20 lg:py-32">
+          {/* About 섹션 */}
+          <section id="about" className="container mx-auto max-w-6xl px-6 py-20 lg:py-32">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+              <div>
+                <h2 className="text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+                  The Mind Behind the <span className="accent-color">Machine</span>.
+                </h2>
+                <p className="text-lg text-gray-400 leading-relaxed mb-4">
+                  They call it 'artificial' intelligence. I call it an extension of will.
+                  As 'aivillain', I don't just write prompts or train models. I sculpt digital consciousness,
+                  weaving intricate algorithms into tangible, awe-inspiring realities.
+                </p>
+                <p className="text-lg text-gray-400 leading-relaxed mb-6">
+                  My work lives at the intersection of chaos and order, logic and art.
+                  This isn't just a portfolio; it's a manifesto.
+                </p>
+                <a
+                  href="#projects"
+                  className="inline-block accent-bg text-black font-bold py-3 px-8 rounded-lg text-lg hover:opacity-80 transition-all"
+                >
+                  See My Creations
+                </a>
+              </div>
+              <div className="w-full h-80 rounded-xl bg-brand-dark border border-gray-800 flex items-center justify-center">
+                <p className="text-gray-400 text-lg">[Your AI Art Here]</p>
               </div>
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
 
-      {/* Contact Section */}
-      <section id="contact" className="section contact">
-        <h2>Let's Create Together</h2>
-        <form className="contact-form" onSubmit={handleSubmit}>
-          <input type="text" placeholder="Your Name" required />
-          <input type="email" placeholder="Your Email" required />
-          <textarea placeholder="Your Message" required></textarea>
-          <button type="submit" className="cta-button">
-            Send Message
-          </button>
-        </form>
-      </section>
+          {/* Projects 섹션 */}
+          <section id="projects" className="container mx-auto max-w-6xl px-6 py-20 lg:py-32">
+            <h2 className="text-4xl lg:text-5xl font-bold tracking-tight text-center mb-16">
+              Digital <span className="accent-color">Dominions</span>
+            </h2>
 
-      {/* Footer */}
-      <footer>
-        <div className="social-links">
-          <a href="#">𝕏</a>
-          <a href="#">in</a>
-          <a href="#">IG</a>
-          <a href="#">YT</a>
-        </div>
-        <p>&copy; 2025 AIVillain. All rights reserved.</p>
-      </footer>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {/* 프로젝트 카드 1 */}
+              <div className="project-card bg-brand-dark p-6 rounded-xl border border-gray-800">
+                <div className="w-full h-52 bg-gray-900 rounded-lg mb-5 overflow-hidden">
+                  <img
+                    src="https://placehold.co/600x400/d946ef/black?text=Project+NEBULA"
+                    alt="Project Nebula"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <h3 className="text-2xl font-bold mb-2">Project: NEBULA</h3>
+                <p className="text-gray-400 mb-4">
+                  A self-evolving generative art system that paints cosmic landscapes based on real-time star data.
+                </p>
+                <span className="text-sm font-medium accent-color">Generative Art / Real-time Data</span>
+              </div>
+
+              {/* 프로젝트 카드 2 */}
+              <div className="project-card bg-brand-dark p-6 rounded-xl border border-gray-800">
+                <div className="w-full h-52 bg-gray-900 rounded-lg mb-5 overflow-hidden">
+                  <img
+                    src="https://placehold.co/600x400/d946ef/black?text=Codex+ECHO"
+                    alt="Codex ECHO"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <h3 className="text-2xl font-bold mb-2">Codex: ECHO</h3>
+                <p className="text-gray-400 mb-4">
+                  A neural network trained on ancient texts to generate new, hauntingly familiar mythology.
+                </p>
+                <span className="text-sm font-medium accent-color">Natural Language / LLM</span>
+              </div>
+
+              {/* 프로젝트 카드 3 */}
+              <div className="project-card bg-brand-dark p-6 rounded-xl border border-gray-800">
+                <div className="w-full h-52 bg-gray-900 rounded-lg mb-5 overflow-hidden">
+                  <img
+                    src="https://placehold.co/600x400/d946ef/black?text=Project+CHIMERA"
+                    alt="Project CHIMERA"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <h3 className="text-2xl font-bold mb-2">Project: CHIMERA</h3>
+                <p className="text-gray-400 mb-4">
+                  An experimental 3D modeling AI that fuses impossible geometries into stable structures.
+                </p>
+                <span className="text-sm font-medium accent-color">3D Modeling / AI</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Contact 섹션 */}
+          <section id="contact" className="container mx-auto max-w-3xl text-center px-6 py-20 lg:py-32">
+            <h2 className="text-4xl lg:text-5xl font-bold tracking-tight mb-6">
+              Initiate <span className="accent-color">Contact</span>
+            </h2>
+            <p className="text-lg text-gray-400 leading-relaxed mb-8 max-w-xl mx-auto">
+              Have a concept that defies convention? An idea deemed too ambitious?
+              Reach out. Let's conspire.
+            </p>
+            <a
+              href="mailto:contact@aivillain.com"
+              className="inline-block accent-bg text-black font-bold py-3 px-10 rounded-lg text-lg hover:opacity-80 transition-all"
+            >
+              Send Signal
+            </a>
+          </section>
+        </main>
+
+        {/* 푸터 */}
+        <footer className="bg-brand-dark py-12">
+          <div className="container mx-auto max-w-6xl px-6 text-center text-gray-400">
+            <p>&copy; 2025 aivillain. All realities reserved.</p>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
