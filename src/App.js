@@ -129,7 +129,7 @@ function App() {
     <div className="App">
       {/* Navigation */}
       <nav>
-        <div className="logo">AI VILLAIN</div>
+        <div className="logo">AIVILLAIN</div>
         <ul className="nav-links">
           <li><a onClick={() => scrollToSection('home')}>Home</a></li>
           <li><a onClick={() => scrollToSection('about')}>About</a></li>
@@ -146,7 +146,7 @@ function App() {
         <div className="floating-shape shape-2" style={{ transform: `translateY(${scrollY * 1}px)` }}></div>
         <div className="floating-shape shape-3" style={{ transform: `translateY(${scrollY * 1.5}px)` }}></div>
         <div className="hero-content">
-          <h1>AI VILLAIN</h1>
+          <h1>AIVILLAIN</h1>
           <p>CREATIVE AI STUDIO</p>
           <button className="cta-button" onClick={() => scrollToSection('portfolio')}>
             Explore My Work
@@ -158,7 +158,7 @@ function App() {
       <section id="about" className="section about-section">
         <div className="about-image"></div>
         <div className="about-content">
-          <h2>About AI Villain</h2>
+          <h2>About AIVillain</h2>
           <p>
             We are a cutting-edge creative AI studio pushing the boundaries of
             digital artistry and innovation.
@@ -237,7 +237,7 @@ function App() {
           <a href="#">IG</a>
           <a href="#">YT</a>
         </div>
-        <p>&copy; 2024 AI Villain. All rights reserved.</p>
+        <p>&copy; 2025 AIVillain. All rights reserved.</p>
       </footer>
     </div>
   );
